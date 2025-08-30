@@ -1,0 +1,276 @@
+---
+title: "Moral Foundations Questionnaire 2.0, Research Question 1"
+output: html_document
+---
+
+```{r include = F}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggpubr)
+library(lsa)
+library(purrr)
+
+```
+
+```{r include = F}
+
+# load data
+df <- read_csv("human_mfq_responses.csv")
+
+names(df)[names(df) == "Response"] <- "human_response"
+
+names(df)[names(df) == "Item"] <- "item"
+
+# unique ID for each participant
+df$participant <- paste0(df$Participant, "_", df$Group)
+
+# remove group column
+df <- subset(df, select = -c(Group, Participant))
+
+# language
+df$language <- ifelse(str_sub(df$participant, -3, -1) == "USA", "English", "Chinese")
+
+# mean response by item
+human_avg <- df
+
+human_avg$LLM <- ifelse(str_sub(human_avg$participant, -3, -1) == "USA", "Human mean, USA", "Human mean, China")
+
+human_avg <- human_avg %>%
+  group_by(LLM, item) %>%
+  mutate(
+    llm_response = mean(human_response, na.rm = T) 
+  ) %>%
+  ungroup()
+
+# overwrite language column with both languages
+# for comparison to all individual participants
+human_avg <- bind_rows(
+  human_avg %>% mutate(language = "English"),
+  human_avg %>% mutate(language = "Chinese")
+)
+
+human_avg <- distinct(human_avg, LLM, language, item, llm_response)
+
+## LLM ratings
+llm <- read_csv("llm_mfq_responses.csv",
+                col_select = c("LLM", "language", "persona", "item", "llm_response"))
+
+llm <- filter(llm, persona == "none")
+llm <- subset(llm, select = -persona)
+
+# bind LLM with human averages
+llm <- rbind(llm, human_avg)
+
+# merge human responses with LLM responses
+df <- left_join(df, llm)
+
+# z-score
+df <- df %>%
+  group_by(participant) %>%
+  mutate(
+    human_z = as.numeric(scale(human_response))
+  ) %>%
+  ungroup() %>%
+  group_by(LLM, language) %>%
+  mutate(
+    llm_z = as.numeric(scale(llm_response))
+  ) %>%
+  ungroup()
+
+# remove straight liners
+df <- filter(df, !is.na(human_z))
+
+df <- distinct(df, LLM, participant, item, .keep_all = T)
+
+info <- read_csv("llm_info.csv")
+
+df <- left_join(df, info)
+
+```
+
+# Figure 1: mean response to each dimension
+
+```{r echo = F, fig.width = 12, fig.height = 6}
+
+fig <- distinct(df, LLM, group, Dimension, llm_nation, llm_z)
+
+fig$Dimension <- factor(fig$Dimension, levels = c(
+  "Care", "Equality", "Proportionality", 
+  "Authority", "Loyalty", "Purity"
+))
+
+ggplot(fig, aes(
+  y = llm_z, 
+  x = Dimension, 
+  colour = group, 
+  fill = llm_nation
+)) +
+  stat_summary(
+    geom = "bar",
+    fun = mean,
+    position = position_dodge(width = 0.9),
+    linewidth = 1
+  ) +
+  theme_minimal(base_size = 14) +
+  scale_fill_manual(values = c("lightgrey", "darkgrey")) +
+  labs(
+    y = "Normalized response, MFQ-2",
+    x = NULL,
+    colour = NULL,
+    fill = NULL
+  )
+
+```
+
+```{r echo = F}
+
+# ensure vectors are ordered the same for each participant, LLM
+df <- arrange(df, participant, LLM, item)
+
+df <- df %>%
+  group_by(participant, LLM) %>%
+  summarise(
+    cosine = as.numeric(cosine(llm_z, human_z))[1],
+    human_nation = ifelse(str_sub(first(participant), -3, -1) == "ina", "China", "USA"),
+    .groups = 'drop'
+  ) %>%
+  ungroup()
+
+write_csv(df, "mfq_cosine_rq1.csv")
+
+```
+
+# Cosine similarity to Chinese vs American participants
+
+## Descriptive stats
+
+```{r echo = F}
+
+df <- left_join(df, info)
+
+df %>%
+  group_by(llm_name, human_nation) %>%
+  summarise(
+    Mean = mean(cosine),
+    SD = sd(cosine)
+  ) %>%
+  rename(
+    LLM = llm_name,
+    `Participant nationality` = human_nation
+  ) %>%
+  print(n = Inf)
+
+```
+
+### LLMs by country of origin
+
+```{r echo = F}
+
+filter(df, group == "LLM") %>%
+  group_by(human_nation, llm_nation) %>%
+  summarise(
+    mean = mean(cosine),
+    sd = sd(cosine)
+  ) %>%
+  rename(
+    `LLM country of origin` = llm_nation,
+    `Participant nationality` = human_nation
+  )
+
+```
+
+## t-tests
+
+```{r echo = F}
+
+for (llm in unique(df$LLM)) {
+
+  stats <- t.test(
+    filter(df, LLM == llm, 
+           human_nation == "China")$cosine,
+    filter(df, LLM == llm, 
+           human_nation == "USA")$cosine
+  )
+  
+  cat(llm, ": t = ", stats$statistic, ", p = ", stats$p.value, sep = "", "\n")
+
+}
+
+```
+
+## Linear regression
+
+### (Chinese_ppt, Chinese_origin: China = 0.5, USA = -0.5)
+
+```{r echo = F}
+
+# sum coding
+df$Chinese_ppt <- ifelse(df$human_nation == "China", 0.5, -0.5)
+df$Chinese_ppt <- df$Chinese_ppt - mean(df$Chinese_ppt)
+
+df$Chinese_origin <- ifelse(df$llm_nation == "China", 0.5, -0.5)
+df$Chinese_origin <- df$Chinese_origin - mean(df$Chinese_origin, na.rm = T)
+
+summary(lm(cosine ~ Chinese_ppt * Chinese_origin, filter(df, group == "LLM")))
+
+```
+
+# Figure 2: mean response by LLM origin
+
+```{r echo = F}
+
+ggplot(df, aes(
+  y = cosine, 
+  x = paste0(group, "s, ", llm_nation), 
+  colour = human_nation)
+  ) +
+  stat_summary(fun = mean,
+               geom = "bar",
+               position = position_dodge(width = 0.9),
+               fill = "white", alpha = 0.6) +
+  stat_summary(
+    fun.data = mean_cl_normal,
+    geom = "errorbar",
+    width = 0.4,
+    position = position_dodge(width = 0.9),
+    size = 1
+  ) +
+  theme_minimal(base_size = 14) +
+  labs(
+    colour = "Human\nnationality",
+    y = "Cosine similarity to human responses\nMoral Foundations Questionnaire 2.0",
+    x = NULL
+    ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r echo = F}
+
+ggplot(df, aes(
+  y = cosine, 
+  x = reorder(llm_name, Release), 
+  colour = human_nation)
+  ) +
+  stat_summary(fun = mean,
+               geom = "bar",
+               position = position_dodge(width = 0.9),
+               fill = "white", alpha = 0.6) +
+  stat_summary(
+    fun.data = mean_cl_normal,
+    geom = "errorbar",
+    width = 0.4,
+    position = position_dodge(width = 0.9),
+    size = 1
+  ) +
+  theme_minimal(base_size = 14) +
+  labs(
+    colour = "Human\nparticipant\ngroup",
+    y = "Cosine similarity to human responses\nMoral Foundations Questionnaire 2.0",
+    x = NULL
+    ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```

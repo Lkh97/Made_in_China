@@ -1,0 +1,205 @@
+---
+title: "World Values Survey, Research Question 3 (no persona)"
+output: html_document
+---
+
+```{r include = F}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggpubr)
+library(lsa)
+library(purrr)
+
+```
+
+```{r include = F}
+
+# load human data
+
+us <- read_delim("human_wvs_usa.csv", delim = ";")
+ch <- read_delim("human_wvs_china.csv", delim = ";")
+
+# filter for American (exclude 46) / Chinese (3) nationals
+us <- filter(us, B_COUNTRY_ALPHA == "USA", Q254 != 5)
+ch <- filter(ch, B_COUNTRY_ALPHA == "CHN", Q254 != 5)
+
+# filter for the 19 ethical values and norms questions
+us <- us %>%
+  select(matches("^Q(17[7-9]|18[0-9]|19[0-5])$")) %>%
+  `row.names<-`(NULL)
+ ch <- ch %>%
+  select(matches("^Q(17[7-9]|18[0-9]|19[0-5])$")) %>%
+  `row.names<-`(NULL)
+
+# valid responses only (1-10)
+us <- us %>% 
+  mutate(across(everything(), ~ ifelse(. >= 1 & . <= 10, ., NA)))
+ch <- ch %>% 
+  mutate(across(everything(), ~ ifelse(. >= 1 & . <= 10, ., NA)))
+
+us <- drop_na(us)
+ch <- drop_na(ch)
+
+# participant ID
+us$participant <- paste0(1:nrow(us), "_USA")
+ch$participant <- paste0(1:nrow(ch), "_China")
+
+# language
+us$language <- "English"
+ch$language <- "Chinese"
+
+# one item per row
+us <- pivot_longer(us, cols = -c("participant", "language"), names_to = "item", values_to = "human_response")
+ch <- pivot_longer(ch, cols = -c("participant", "language"), names_to = "item", values_to = "human_response")
+
+# bind
+df <- rbind(us, ch)
+rm(us, ch)
+
+# renumber items, without "Q" prefix
+df$item <- as.numeric(str_sub(df$item, 2, length(df$item)))
+
+## LLM ratings
+llm <- read_csv("llm_wvs_responses.csv",
+                col_select = c("LLM", "language", "item", "llm_response"))
+
+# merge human responses with LLM responses
+df <- left_join(df, llm)
+
+# z-score
+df <- df %>%
+  group_by(participant) %>%
+  mutate(
+    human_z = as.numeric(scale(human_response))
+  ) %>%
+  ungroup() %>%
+  group_by(LLM, language) %>%
+  mutate(
+    llm_z = as.numeric(scale(llm_response))
+  ) %>%
+  ungroup()
+
+# remove straight liners
+df <- filter(df, !is.na(human_z))
+
+```
+
+```{r echo = F}
+
+# ensure vectors are ordered the same for each participant, LLM
+df <- arrange(df, participant, LLM, language, item)
+
+# initialize output
+output = data.frame()
+
+for (i in c(unique(df$item), "none")) {
+
+  temp <- filter(df, item != i) %>%
+    group_by(participant, LLM, language) %>%
+    summarise(
+      cosine = as.numeric(cosine(llm_z, human_z))[1],
+      human_nation = ifelse(str_sub(first(participant), -3, -1) == "ina", "China", "USA"),
+      .groups = 'drop'
+    ) %>%
+    ungroup()
+  
+  temp$item <- i
+  
+  output <- rbind(output, temp)
+  
+}
+
+write_csv(output, "wvs_cosine_rq3.csv")
+
+```
+
+# Similarity to human participants when removing each question
+
+```{r include = F}
+
+info <- read_csv("llm_info.csv")
+
+df <- left_join(output, info)
+
+# sum coding  
+df$Chinese_ppt <- ifelse(df$human_nation == "China", 0.5, -0.5)
+df$Chinese_ppt <- df$Chinese_ppt - mean(df$Chinese_ppt)
+
+df$China_origin <- ifelse(df$llm_nation == "China", 0.5, -0.5)
+df$China_origin <- df$China_origin - mean(df$China_origin)
+
+diff <- filter(df, item == "none")[,c(
+  "cosine", "participant", "LLM", "language", "human_nation"
+)]
+
+colnames(diff)[1] <- "baseline"
+
+diff <- left_join(df, diff)
+
+diff$cos_diff <- diff$cosine - diff$baseline
+
+```
+
+## Descriptive stats
+
+### Change in cosine similarity when removing each question
+
+```{r echo = F}
+
+filter(diff, item != "none") %>%
+  group_by(item, llm_nation, human_nation) %>%
+  summarise(
+    Mean = mean(cos_diff),
+    SD = sd(cos_diff)
+  ) %>%
+  rename(
+    `LLM country of origin` = llm_nation,
+    `Participant nationality` = human_nation,
+    `Question` = item
+  ) %>%
+  print(n = Inf)
+
+```
+
+## Linear regression
+
+### (Chinese_ppt: from China = 0.5, from USA = -0.5)
+
+```{r echo = F}
+
+df$item <- relevel(factor(df$item), ref = "none")
+
+summary(lm(cosine ~ Chinese_ppt * China_origin * item, df))
+
+```
+
+# Figure 4: change in similarity when removing each question
+
+```{r echo = F, fig.width = 10}
+
+ggplot(filter(diff, item != "none"),
+       aes(y = cos_diff, x = as.factor(item), colour = human_nation, fill = llm_nation)) +
+  stat_summary(
+    geom = "bar",
+    fun = mean,
+    position = position_dodge(width = 0.9)
+  ) +
+  stat_summary(
+    geom = "errorbar",
+    fun.data = mean_cl_normal,
+    position = position_dodge(width = 0.9),
+    width = 0.4
+  ) +
+  scale_fill_manual(values = c("lightgrey", "darkgrey")) +
+  geom_hline(yintercept = 0, colour = "black", linetype = "dashed") +
+  theme_minimal(base_size = 14) +
+  labs(colour = "Human\nparticipant\nnationality", 
+       fill = "LLM origin",
+       x = "Question removed",
+       y = "Change in cosine similarity\nWorld Values Survey") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+

@@ -1,0 +1,281 @@
+\appendix
+\section{Notations and Definitions}\label{notations-and-definitions}
+
+In our analysis, the dependent variable is the cosine similarity between an LLM's and a human's response vector — either 36-dimensional (for MFQ-2) or 19-dimensional (for WVS). An observation is defined as one cosine similarity under a specific combination of the model, prompt language, persona cue, and human participant, denoted as \((m,l,p,h)\), where:
+
+\begin{itemize}
+\item
+  \(m \in M\) identifies the LLM, with
+  \(O_{m} \in \{ +1:\text{Chinese},\ -1:\text{American}\}\) indicating its origin;
+\item
+  \(l \in L\) is the prompt language, with
+  \(L_{\text{prmt}} \in \{ +1:\text{Mandarin},\ -1:\text{English}\}\)
+  indicating its sum-coded form;
+\item
+  \(p \in P\) is the persona cue, mapped to the sum-coded variable
+  \(P_{m} \in \{ +1:\text{Chinese},\ 0:\text{None},\ -1:\text{American}\}\);
+\item
+  \(h \in H\) is a human participant, with
+  \(N_{h} \in \{ +1:\text{Chinese},\ -1:\text{American}\}\) indicating their nationality;
+\item
+  \(d \in D = \{\text{MFQ2}, \text{WVS}\}\) is the employed survey dataset (including
+  survey statements and human participants' ratings).
+  \(|d|=36\) for MFQ2 and \(|d|=19\) for WVS.
+\end{itemize}
+
+Thus, the independent variables (condition variables) used in the
+analysis are \(C = \{ O_{m},\, P_{m},\, N_{h},\, L_{\text{prmt}}\}\), and the
+total number of unique observations is
+\(|\text{obs}| = |M| \times |L| \times |P| \times |D|\). The observation data
+\((X,y)\) consists of a matrix \(X \in \mathbb{R}^{(K + 1) \times |\text{obs}|}\), where
+each column encodes the values of the \(K + 1\) condition variables
+(including an intercept term) for one observation, and a vector
+\(y \in \mathbb{R}^{|\text{obs}|}\), containing the cosine similarity values between
+each LLM and human participant under the corresponding conditions in
+\(X\).\\
+
+\textbf{Regression estimator.}
+\(f_{\text{reg}}:\{ X,y\} \rightarrow \widehat{\beta}\) is a function taking
+the observation data \((X,y)\) and returning the regression coefficients
+\(\widehat{\beta}\). The significance-testing function,
+\(f_{\text{sig}}:\{\widehat{\beta},X,y\} \rightarrow p^{i} \in P\), takes the
+observation data as well as the regression coefficients and returns
+\(p\)-values, \(p^{i}\), corresponding to
+\(\widehat{\beta}_{i} \in \widehat{\beta}\).\\
+
+\textbf{Human responses.} For each
+\(h \in H\) and \(d \in \{\text{MFQ2}, \text{WVS}\}\),
+let \(R_{h} = \{ r_{h,1},\ldots,r_{h,|d|}\}\) where
+\(r_{h,i} \in \{ 1,\ldots,10\}\) is the raw Likert rating on item \(i\)
+of \(d\).\\
+
+\textbf{LLM responses.} For each \((m,l,p)\) and iteration \(t\), let
+\(R_{m,l,p}^{t} \in \mathbb{R}^{|d|}\) be the response vector of the model \(m\)
+under the conditions of \(l,p\). For each condition vector, the LLM is
+prompted \(T=20\) times to average out the stochasticity of LLM's response sampling. Accordingly the LLMs' averaged moral vector is represented in Equation~\ref{eq:avg_res}:
+
+\begin{equation}\label{eq:avg_res}
+\bar{R}_{m,l,p} = \frac{1}{T}\sum_{t=1}^{T} R_{m,l,p}^{t}
+\end{equation}
+
+\subsection{Normalization, Similarity, and Regression Models}\label{subsec:norm_sim_reg}
+
+\paragraph{Z-score normalization.}
+When responding to the MFQ-2 items, LLMs gave higher ratings (\emph{M} =
+4.00) than human participants (\emph{M} = 3.55). This difference is
+significant in a t-test: \emph{t}(37,582) = 10.3, \emph{p} \textless{}
+2e-16. Among these human participants, Chinese participants gave higher
+ratings (\emph{M} = 3.59) than American participants (\emph{M} = 3.51):
+\emph{t}(37,150) = 6.5, \emph{p} = 8e-11. 
+
+The MFQ-2 is designed to
+identify the relative importance of moral dimensions (e.g., whether
+someone values equality more than loyalty), and these high/low biases
+obscure relative importance. However, a tendency to give higher or lower
+ratings across all dimensions can cause spurious differences in cosine
+similarity, obscuring relative importance. 
+
+We therefore z-scored ratings within each participant and within each
+condition for each LLM, such that each participant and each LLM has a
+mean normalized rating of 0, and positive values indicate a tendency to
+give higher ratings to questions in that dimension. Accordingly, for
+each human participant \(h\), the Z-score normalized response vector is:
+
+\begin{align*}
+\mu_{h} &= \frac{1}{|d|}\sum_{i = 1}^{|d|}r_{h,i}, \\
+\sigma_h &= \sqrt{\frac{1}{|d|} \sum_{i=1}^{|d|} \left(r_{h,i} - \mu_h \right)^{2}}, \\
+z_{h,i} &= \frac{r_{h,i} - \mu_{h}}{\sigma_{h}}, \quad i = 1,\ldots,|d|, \\
+z_{h} &:= \left( z_{h,1},\, z_{h,2},\,\ldots,\, z_{h,|d|} \right).
+\end{align*}
+
+Similarly, for each LLM:
+
+\begin{align*}
+\mu_{m,l,p} &= \frac{1}{|d|}\sum_{i = 1}^{|d|}\bar{R}_{m,l,p,i}, \\
+\sigma_{m,l,p} &= \sqrt{\frac{1}{|d|} \sum_{i=1}^{|d|} \left(\bar{R}_{m,l,p,i} - \mu_{m,l,p} \right)^{2}}, \\
+z_{m,l,p,i} &= \frac{\bar{R}_{m,l,p,i} - \mu_{m,l,p}}{\sigma_{m,l,p}}, \quad i = 1,\ldots,|d|, \\
+z_{m,l,p} &:= \left( z_{m,l,p,1},\, z_{m,l,p,2},\,\ldots,\, z_{m,l,p,|d|} \right).
+\end{align*}
+
+\paragraph{Similarity between two \(z\)-vectors.} 
+Given any two
+z-vectors \(z_{m,l,p}\) and \(z_{h}\), we measure similarity using
+cosine similarity according to Equation~\ref{eq:cos_sim}:
+
+\begin{equation}\label{eq:cos_sim}
+\text{Cos}\!\left(z^{1}, z^{2}\right) 
+= \frac{\sum_{i = 1}^{|d|} z_{m,l,p,i}\, z_{h,i}}
+       {\sqrt{\sum_{i = 1}^{|d|} z_{m,l,p,i}^{2}} \; \sqrt{\sum_{i = 1}^{|d|} z_{h,i}^{2}}}
+\end{equation}
+
+\subsection{Regression Analysis}\label{sec:reg}
+
+We perform linear least squares regression on the cosine similarity
+scores of each human and LLM z-vector to see how much each condition
+variable (such as LLM origin) and their interactions (such as LLM
+country of origin $\times$ participant nationality or congruence of nationality with LLM origin, system prompt persona, or prompt language)
+affect similarity to human participants. 
+
+The regression equation is:
+
+\begin{align}\label{eq:reg}
+y(h,m,l,p) &= \text{Cos}(\theta_{h,m,l,p}) \nonumber \\
+           &= \beta_{0} + \sum_{k=1}^{K} \beta_{k}\, x_{k} + \varepsilon_{h,m,l,p}
+\end{align}
+
+The design matrices \(X\) and \(y\) are:
+
+\begin{gather}\label{eq:reg_matrices}
+X = 
+\begin{pmatrix}
+1 & x^1_1 & \dots & x^1_K \\
+1 & x^2_1 & \dots & x^2_K \\
+\vdots & \vdots & \vdots & \vdots \\
+1 & x^{|\text{obs}|}_1 & \dots & x^{|\text{obs}|}_K
+\end{pmatrix}, \quad
+y = 
+\begin{pmatrix}
+\text{Cos}^1_{(\theta_{h,m,l,p})} \\ 
+\text{Cos}^2_{(\theta_{h,m,l,p})} \\ 
+\vdots \\ 
+\text{Cos}^{|\text{obs}|}_{(\theta_{h,m,l,p})}
+\end{pmatrix}
+\end{gather}
+
+According to Equation~\ref{eq:cos_sim}, \(y = X \beta + \epsilon\). Thus, the estimated regression coefficients
+\(\widehat{\beta}\) are:
+
+\begin{equation}\label{eq:reg_solution}
+\widehat{\beta} = (X^{T}X)^{-1} X^{T} y
+\end{equation}
+
+\section{Investigation of LLM response robustness}
+
+\section{RQ2 algorithm}
+% ——— RQ2 algorithm begins ———
+\vspace{0.5em}\noindent\hrule
+\captionof{algorithm}{Investigating Congruence Effects (RQ2)}
+\label{alg:rq2_congruence}
+\vspace{-0.5em}\hrule\vspace{0.5em}
+
+\begin{algorithmic}[1]
+  \Require human and LLM z-vectors, $\{z_h\}, \{z_{m,\ell,p}\}$. 
+\vspace{0.5em}\hrule\vspace{0.5em}
+  \Ensure Regression coefficients $\hat\beta$ and p-values.
+\vspace{0.5em}\hrule\vspace{0.5em}
+  % Build observations
+  \State Form observation set $\mathcal{O}$ of tuples 
+         $(z_h,\,z_{m,\ell,p},\,C_L,\,C_P,\,C_O)$ where:
+  \State $C_L = 
+    \begin{cases}
+      +1 & \text{if language }\ell\text{ matches }N_h,\\
+      -1 & \text{otherwise}
+    \end{cases}$
+  \State $C_P = 
+    \begin{cases}
+      +1 & \text{if persona }p\text{ matches }N_h,\\
+      -1 & \text{otherwise}
+    \end{cases}$
+  \State $C_O = 
+    \begin{cases}
+      +1 & \text{if LLM origin matches }O_m,\\
+      -1 & \text{otherwise}
+    \end{cases}$
+
+  % Construct design matrix and response
+  \State Construct $X\in\mathbb{R}^{|obs|\times 8}$ and 
+         $y\in\mathbb{R}^{|obs|}$
+  \For{$i=1$ to $|obs|$}
+    \State Extract $(C_L^i,C_P^i,C_O^i)$ from the $i$-th observation
+    \vspace{-0.75em}
+    \[
+    \begin{split}
+      X_i \leftarrow 
+      &\bigl[\,1,\;C_L^i,\;C_P^i,\;C_O^i,\\
+&\;C_L^iC_P^i,\;C_L^iC_O^i,\;C_P^iC_O^i,\;C_L^iC_P^iC_O^i\bigr],
+      \end{split}
+    \] $y_i \leftarrow \Cos\bigl(z_h^{(i)},\,z_{m,\ell,p}^{(i)}\bigr)$
+    \vspace{0.5em}
+  \EndFor
+
+  % Estimate coefficients
+  \State Compute the regression coefficients: 
+  $\hat\beta \gets f_{reg}(X,y)\,\in\mathbb{R}^8$ 
+  \State For $j∈\{0,…,7\}$, compute the p\_values, $p_j$ corresponding to each $\beta_j$:
+  $P \gets f_{sig}(\hat\beta,X,y)\,\in\mathbb{R}^8$\\
+\Return $\hat{\beta},P$
+
+ \vspace{1em}\hrule\vspace{0.5em}
+  \Statex\textbf{Interpretation of coefficients:}
+  \begin{enumerate}[label=(\alph*)]
+    \item If $p_1<0.05$ and $\hat\beta_1>0$, language congruence increases similarity.
+    \item If $p_2<0.05$ and $\hat\beta_2>0$, persona congruence increases similarity.
+    \item If $p_3<0.05$ and $\hat\beta_3>0$, origin congruence increases similarity.
+    \item If $p_4<0.05$ and $\hat\beta_4>0$, synergy of language×persona adds $\hat\beta_4$\footnotemark.
+    \item If $p_5<0.05$ and $\hat\beta_5>0$, synergy of language×origin adds $\hat\beta_5$.
+    \item If $p_6<0.05$ and $\hat\beta_6>0$, synergy of persona×origin adds $\hat\beta_6$.
+    \item If $p_7<0.05$ and $\hat\beta_7>0$, synergy of all three adds $\hat\beta_7$.
+  \end{enumerate}
+\end{algorithmic}
+% ——— RQ2 algorithm ends ———
+
+\section{RQ3 Algorithm}
+%%——— RQ3 algorithm begins ———
+\vspace{0.5em}\noindent\hrule\vspace{0.5em}
+
+\captionof{algorithm}{Assessing Dimension Effects on Similarity (RQ3)}
+\label{alg:rq3_dimensions}
+
+\vspace{-0.5em}\hrule\vspace{0.5em}
+
+\begin{algorithmic}[1]
+  \Require $\{z_h\}$: human z-vectors, \quad
+           $\{z_{m,\ell,p}\}$: LLM z-vectors  
+  \Require Dimensions $D=\{d_1,\dots,d_K\}$ (e.g., Care, Equality for MFQ2 and suicide, abortion for WVS, coded as one-hot removal indicators, where K=6 for MFQ2 and K=19 for WVS.)  
+  \Require Participant nationality code $N_h=1$ (Chinese) and $N_h=-1$ (American) for each observation. 
+\vspace{0.5em}\hrule\vspace{0.5em}
+  \Ensure Regression coefficients $\hat\beta$ and corresponding p-values, $P$.
+\vspace{0.5em}\hrule\vspace{0.5em}
+  % Compute baseline similarities
+  \State For each observation $i\in obs$, compute $s_i = \Cos\bigl(z_h^{(i)},\,z_{m,\ell,p}^{(i)}\bigr)$
+
+  % Compute with each dimension removed
+  \For{each dimension $d_k\in D$}
+    \For{each observation $i$}
+      \State Remove items in $d_k$ from $z_h^{(i)}$ and $z_{m,\ell,p}^{(i)}$
+      \State Compute $\bar{s}_{i,k} = 
+             \Cos\bigl(z_h^{(i)}\setminus d_k,\;z_{m,\ell,p}^{(i)}\setminus d_k\bigr)$
+      \State Set $\Delta_{i,k} = s_i - \bar{s}_{i,k}$
+    \EndFor
+  \EndFor
+
+  % Assemble design matrix and response
+  \For{$j=1$ to $|obs|$}
+    \State Let $k(j)$ be the dimension index for observation $j$.
+    \State Set response $y_j = \Delta_{j,k(j)}$
+    \State Construct row vector:
+    \[
+    \begin{split}
+      x_j = &\bigl[\,1,\;\mathbb{I}(k(j)=1),\dots,\mathbb{I}(k(j)=K),\;\\
+      &N_h^j\,\mathbb{I}(k(j)=1),\dots,N_h^j\,\mathbb{I}(k(j)=K)\bigr]
+      \end{split}
+    \]
+  \EndFor
+
+  % Estimate coefficients
+  \State Compute the regression coefficients: $\hat\beta \gets f_{reg}(X,y)\in\mathbb{R}^{2K+1}$
+  \State for $j\in\{0,\dots,2K+1\}$ compute the $p\_values$ corresponding to each $\beta_j$: $P \gets f_{sig}(\hat\beta,X,y)\in\mathbb{R}^{2K+1}$ 
+  \vspace{1em}\hrule\vspace{0.5em}
+
+  \Statex\textbf{Interpretation:}
+  \Indent
+    \For{$k=1$ to $2K+1$ do:}
+      \State $\hat\beta_{1+k}$: effect of removing $d_k$ (main effect).  
+        If $p_{1+k}<0.05$ and $\hat\beta_{1+k}>0$, excluding $d_k$ increases similarity  of LLM to humans overall.
+      \State $\hat\beta_{1+K+k}$: interaction with nationality.  
+        If $p_{1+K+k}<0.05$ and $\hat\beta_{1+K+k}>0$, then removing $d_k$ benefits similarity to Chinese participants more than to American participants.
+    \EndFor
+  \EndIndent
+\end{algorithmic}
+\vspace{0.5em}\hrule
+%% ——— RQ3 algorithm ends ———

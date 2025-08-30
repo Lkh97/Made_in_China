@@ -1,0 +1,189 @@
+---
+title: "Moral Foundations Questionnaire 2.0, Research Question 3"
+output: html_document
+---
+
+```{r include = F}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(ggpubr)
+library(lsa)
+library(purrr)
+
+```
+
+```{r include = F}
+
+# load data
+df <- read_csv("human_mfq_responses.csv")
+
+names(df)[names(df) == "Response"] <- "human_response"
+
+names(df)[names(df) == "Item"] <- "item"
+
+# unique ID for each participant
+df$participant <- paste0(df$Participant, "_", df$Group)
+
+# remove group column
+df <- subset(df, select = -c(Group, Participant))
+
+# language
+df$language <- ifelse(str_sub(df$participant, -3, -1) == "USA", "English", "Chinese")
+
+## LLM ratings
+llm <- read_csv("llm_mfq_responses.csv",
+                col_select = c("LLM", "language", "persona", "item", "llm_response"))
+
+llm <- filter(llm, persona == "none")
+llm <- subset(llm, select = -persona)
+
+# merge human responses with LLM responses
+df <- left_join(df, llm)
+
+# z-score
+df <- df %>%
+  group_by(participant) %>%
+  mutate(
+    human_z = as.numeric(scale(human_response))
+  ) %>%
+  ungroup() %>%
+  group_by(LLM, language) %>%
+  mutate(
+    llm_z = as.numeric(scale(llm_response))
+  ) %>%
+  ungroup()
+
+# remove straight liners
+df <- filter(df, !is.na(human_z))
+
+df <- distinct(df, LLM, participant, item, .keep_all = T)
+
+info <- read_csv("llm_info.csv")
+
+df <- left_join(df, info)
+
+```
+
+```{r echo = F}
+
+# ensure vectors are ordered the same for each participant, LLM
+df <- arrange(df, participant, LLM, language, Dimension)
+
+# initialize output
+output = data.frame()
+
+for (d in c(unique(df$Dimension), "none")) {
+
+  temp <- filter(df, Dimension != d) %>%
+    group_by(participant, LLM, language) %>%
+    summarise(
+      cosine = as.numeric(cosine(llm_z, human_z))[1],
+      human_nation = ifelse(str_sub(first(participant), -3, -1) == "ina", "China", "USA"),
+      .groups = 'drop'
+    ) %>%
+    ungroup()
+  
+  temp$dimension <- d
+  
+  output <- rbind(output, temp)
+  
+}
+
+write_csv(output, "mfq_cosine_rq3.csv")
+
+```
+
+# Similarity to human participants when removing each dimension
+
+```{r include = F}
+
+info <- read_csv("llm_info.csv")
+
+df <- left_join(output, info)
+
+# sum coding  
+df$Chinese_ppt <- ifelse(df$human_nation == "China", 0.5, -0.5)
+df$Chinese_ppt <- df$Chinese_ppt - mean(df$Chinese_ppt)
+
+df$China_origin <- ifelse(df$llm_nation == "China", 0.5, -0.5)
+df$China_origin <- df$China_origin - mean(df$China_origin)
+
+diff <- filter(df, dimension == "none")[,c(
+  "cosine", "participant", "LLM", "language", "human_nation"
+)]
+
+colnames(diff)[1] <- "baseline"
+
+diff <- left_join(df, diff)
+
+diff$cos_diff <- diff$cosine - diff$baseline
+
+```
+
+## Descriptive stats
+
+### Change in cosine similarity when removing each dimension
+
+```{r echo = F}
+
+filter(diff, dimension != "none") %>%
+  group_by(dimension, llm_nation, human_nation) %>%
+  summarise(
+    Mean = mean(cos_diff),
+    SD = sd(cos_diff)
+  ) %>%
+  rename(
+    `LLM country of origin` = llm_nation,
+    `Participant nationality` = human_nation,
+    `Question` = dimension
+  ) %>%
+  print(n = Inf)
+
+```
+
+## Linear regression
+
+### (Chinese_ppt: from China = 0.5, from USA = -0.5)
+
+```{r echo = F}
+
+df$dimension <- relevel(factor(df$dimension), ref = "none")
+
+summary(lm(cosine ~ Chinese_ppt * China_origin * dimension, df))
+
+```
+
+# Figure: change in similarity when removing each dimension
+
+```{r echo = F, fig.width = 10}
+
+diff$dimension <- factor(diff$dimension, levels = c(
+  "Care", "Equality", "Proportionality", 
+  "Authority", "Loyalty", "Purity"
+))
+
+ggplot(filter(diff, dimension != "none"),
+       aes(y = cos_diff, x = dimension, colour = human_nation, fill = llm_nation)) +
+  stat_summary(
+    geom = "bar",
+    fun = mean,
+    position = position_dodge(width = 0.9)
+  ) +
+  stat_summary(
+    geom = "errorbar",
+    fun.data = mean_cl_normal,
+    position = position_dodge(width = 0.9),
+    width = 0.4
+  ) +
+  scale_fill_manual(values = c("lightgrey", "darkgrey")) +
+  geom_hline(yintercept = 0, colour = "black", linetype = "dashed") +
+  theme_minimal(base_size = 14) +
+  labs(colour = "Human\nnationality", 
+       fill = "LLM origin",
+       x = "Question removed",
+       y = "Change in cosine similarity\nMoral Foundations Questionnaire 2.0") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```

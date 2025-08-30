@@ -1,0 +1,35 @@
+---
+title: "MFQ-2, RQ1: Follow up"
+output: html_document
+---
+
+```{r include = F}
+
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+
+```
+
+```{r echo = F}
+
+# load data
+df <- read_csv("mfq_cosine_rq1.csv")
+
+df$Chinese_ppt <- ifelse(df$human_nation == "China", 0.5, -0.5)
+df$Chinese_ppt <- df$Chinese_ppt - mean(df$Chinese_ppt)
+
+df$Chinese_mean <- ifelse(df$LLM == "Human mean, China", 0.5, -0.5)
+
+for (llm in unique(filter(df, str_sub(LLM, 1, 5) != "Human")$LLM)) {
+  
+  print(llm)
+  
+  print(summary(lm(
+    cosine ~ Chinese_ppt * Chinese_mean,
+    filter(df, LLM %in% c(llm, "Human mean, China"))
+  )))
+  
+}
+
+```

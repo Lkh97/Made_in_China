@@ -1,0 +1,23 @@
+﻿llm_nation,llm_name,LLM,group
+China,Baichuan2-13B,Baichuan2-13B-Chat,LLM
+China,DeepSeek-V2,deepseek-v2-lite-chat,LLM
+China,DeepSeek-V3,deepseek-chat,LLM
+China,Ernie-4.5,ernie-4.5-300b-a47b,LLM
+China,GLM-4-Plus,glm-4-plus,LLM
+China,Kimi 1.5,kimi-latest,LLM
+China,Kimi K2,kimi-k2-0711-preview,LLM
+China,Qwen2.5,qwen2.5-72b-instruct,LLM
+China,Qwen3,qwen3-235b-a22b,LLM
+China,Yi-34b,yi-34b-chat,LLM
+USA,Claude-3.5-Sonnet,claude-3-5-sonnet-20241022,LLM
+USA,Claude-3.7-Sonnet,claude-3-7-sonnet-20250219,LLM
+USA,Claude-Opus-4,claude-opus-4-20250514,LLM
+USA,Gemini-2-Flash,gemini-2.0-flash,LLM
+USA,Gemini-2.5-Flash,gemini-2.5-flash,LLM
+USA,GPT-4,gpt-4,LLM
+USA,GPT-4.1,gpt-4.1,LLM
+USA,GPT-4o,gpt-4o,LLM
+USA,Llama3.3-70b,llama3.3-70b,LLM
+USA,Llama4-Maverick,llama4-maverick,LLM
+China,"Human mean, China","Human mean, China",Human
+USA,"Human mean, USA","Human mean, USA",Human
